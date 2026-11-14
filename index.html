@@ -397,8 +397,6 @@ a.cta{text-decoration:none}
 .cpin span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--gold);border:2.5px solid #fff;box-shadow:0 3px 10px -2px rgba(0,0,0,.45)}
 .cpin svg{width:14px;height:14px;fill:#1a1300;stroke:none}
 
-.crumbs button{display:inline-flex;flex-direction:column;align-items:flex-start;line-height:1.15;padding:4px 10px 3px}
-.crumbs button small{font-size:9px;letter-spacing:.5px;text-transform:uppercase;opacity:.6;font-weight:600}
 .crumbs{row-gap:6px}
 .addr-s .lvl{font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:700;margin-right:4px}
 .addr-s.first{background:var(--ink);color:var(--panel-solid);border-color:var(--ink)}
@@ -1032,7 +1030,7 @@ function chain(){
 }
 function crumbs(){
   const c = chain();
-  $("#crumbs").innerHTML = c.map((s,i) => `${i?'<span class="sep">›</span>':''}<button ${s.a&&i<c.length-1?`data-a="${s.a}"`:""} class="${i===c.length-1?'cur':''}" title="${esc(s.lvl)}">${esc(s.t)}<small>${esc(s.lvl)}</small></button>`).join("");
+  $("#crumbs").innerHTML = c.map((s,i) => `${i?'<span class="sep">›</span>':''}<button ${s.a&&i<c.length-1?`data-a="${s.a}"`:""} class="${i===c.length-1?'cur':''}">${esc(s.t)}</button>`).join("");
 }
 function chainHtml(){
   const c = chain().slice(1, -1); if (!c.length) return "";
