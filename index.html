@@ -396,6 +396,13 @@ a.cta{text-decoration:none}
 .cpin>div{transform:translate(-50%,-50%)}
 .cpin span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--gold);border:2.5px solid #fff;box-shadow:0 3px 10px -2px rgba(0,0,0,.45)}
 .cpin svg{width:14px;height:14px;fill:#1a1300;stroke:none}
+
+.crumbs button{display:inline-flex;flex-direction:column;align-items:flex-start;line-height:1.15;padding:4px 10px 3px}
+.crumbs button small{font-size:9px;letter-spacing:.5px;text-transform:uppercase;opacity:.6;font-weight:600}
+.crumbs{row-gap:6px}
+.addr-s .lvl{font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:700;margin-right:4px}
+.addr-s.first{background:var(--ink);color:var(--panel-solid);border-color:var(--ink)}
+.addr-s.first .lvl,.addr-s.first .jp{color:var(--panel-solid);opacity:.7}
 </style>
 </head>
 <body>
@@ -996,15 +1003,40 @@ function camFor(v){
   else if (v.type==="found" && FOUND){ foundPin.setLatLng(FOUND.ll).addTo(map); flyPt(FOUND.ll, Math.max(map.getZoom(), 15)); }
   else if (v.type==="city"){ const c = (v.trip?DAYTRIPS:CITIES).find(x=>x.id===v.id); flyPt(c.ll, v.trip ? 9 : 7); }
 }
+/* Full place hierarchy: Japan › Prefecture › City/Ward › (Ward) › Area › Place */
+function nearestHood(ll, ward){ let best=null, bd=1.3;
+  HOODS.forEach(h => { if (ward && h.ward !== ward) return; const d = km(ll, [h[2],h[3]]); if (d < bd){ bd = d; best = h; } }); return best; }
+function prefStep(en){ const p = PREF[en]; return {t:en, ja:p?p.ja:"", lvl:"prefecture", a: en==="Tokyo" ? "tokyo" : (p ? `pref:${p.id}` : "")}; }
+function chain(){
+  const v = view, c = [{t:"Japan", ja:"日本", lvl:"country", a:"japan"}];
+  if (v.type === "japan") return c;
+  if (v.type === "tokyo"){ c.push(prefStep("Tokyo")); return c; }
+  if (v.type === "ward"){ const w = WARD[v.code]; c.push(prefStep("Tokyo"), {t:w.en+" ward", ja:w.ja, lvl:"special ward", a:`ward:${w.code}`}); return c; }
+  if (v.type === "city"){ const x = (v.trip?DAYTRIPS:CITIES).find(x=>x.id===v.id);
+    c.push(prefStep(x.pf), {t:x.mu, ja:x.mj, lvl:KIND(x.mj) || "city"});
+    if (x.mu.replace(/ (city|town)$/,"") !== x.n) c.push({t:x.n, ja:x.ja, lvl:"place"}); return c; }
+  if (v.type === "place"){ const p = P[v.id];
+    if (p.ward){ const w = WARD[p.ward], h = nearestHood(p.ll, p.ward);
+      c.push(prefStep("Tokyo"), {t:w.en+" ward", ja:w.ja, lvl:"special ward", a:`ward:${w.code}`});
+      if (h && h[0] !== p.n) c.push({t:h[0], ja:h[1], lvl:"area", a:`hood:${h.i}`}); }
+    else if (p.tama){ c.push(prefStep("Tokyo"), {t:`${p.tama} ${KIND(TAMA_JA[p.tama])}`, ja:TAMA_JA[p.tama], lvl:"city · Tama"}); const h = nearestHood(p.ll); if (h && !h.ward) c.push({t:h[0], ja:h[1], lvl:"area", a:`hood:${h.i}`}); }
+    else if (p.pf){ c.push(prefStep(p.pf), {t:p.mu, ja:p.mj, lvl:KIND(p.mj) || "city"}); }
+    c.push({t:p.n, ja:p.ja, lvl:"place"}); return c; }
+  if (v.type === "found" && FOUND){ const x = FOUND;
+    if (x.pf) c.push(prefStep(x.pf));
+    if (x.mu) c.push({t:x.mu, ja:x.muJa||"", lvl:x.muLvl, a:x.ward?`ward:${x.ward}`:""});
+    if (x.ward2) c.push({t:x.ward2, lvl:"ward"});
+    if (x.areaN) c.push({t:x.areaN, lvl:"area"});
+    c.push({t:x.n, lvl:"place"}); return c; }
+  return c;
+}
 function crumbs(){
-  const c = [`<button data-a="japan" class="${view.type==='japan'||view.type==='city'?'cur':''}">Japan</button>`];
-  if (view.type!=="japan" && view.type!=="city") c.push(`<span class="sep">›</span><button data-a="tokyo" class="${view.type==='tokyo'?'cur':''}">Tokyo</button>`);
-  if (view.type==="city"){ const x=(view.trip?DAYTRIPS:CITIES).find(x=>x.id===view.id); c.push(`<span class="sep">›</span><button class="cur">${esc(x.n)}</button>`); }
-  const wc = view.type==="ward" ? view.code : view.type==="place" ? P[view.id].ward : null;
-  if (wc) c.push(`<span class="sep">›</span><button data-a="ward:${wc}" class="${view.type==='ward'?'cur':''}">${esc(WARD[wc].en)}</button>`);
-  if (view.type==="place") c.push(`<span class="sep">›</span><button class="cur">${esc(P[view.id].n)}</button>`);
-  if (view.type==="found" && FOUND) c.push(`<span class="sep">›</span><button class="cur">${esc(FOUND.n)}</button>`);
-  $("#crumbs").innerHTML = c.join("");
+  const c = chain();
+  $("#crumbs").innerHTML = c.map((s,i) => `${i?'<span class="sep">›</span>':''}<button ${s.a&&i<c.length-1?`data-a="${s.a}"`:""} class="${i===c.length-1?'cur':''}" title="${esc(s.lvl)}">${esc(s.t)}<small>${esc(s.lvl)}</small></button>`).join("");
+}
+function chainHtml(){
+  const c = chain().slice(1, -1); if (!c.length) return "";
+  return `<div class="addr">${c.map((s,i) => `${i?'<span class="sep">›</span>':''}<${s.a?`button data-a="${s.a}"`:"span"} class="addr-s ${i===0?'first':''}"><span class="lvl">${esc(s.lvl)}</span>${esc(s.t)}${s.ja?` <span class="jp">${esc(s.ja)}</span>`:""}</${s.a?'button':'span'}>`).join("")}</div>`;
 }
 const backBtn = () => stack.length ? `<button class="back" data-a="back">${svg(ICON.back,'width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"')}Back</button>` : "";
 const lineBadges = codes => codes.map(c => { const l = LINECODES[c]; return l ? `<span class="lb" style="--c:${l.c}"><i>${c}</i>${esc(l.n)}</span>` : ""; }).join("");
@@ -1119,7 +1151,7 @@ function rPlace(id){
     <div class="hb">${stack.length?`<button data-a="back">${svg(ICON.back,'width="15" height="15" fill="none" stroke="#fff" stroke-width="2.4"')}Back</button>`:"<span></span>"}<button data-a="zoomto:${id}">${svg(ICON.pin,'width="15" height="15" fill="none" stroke="#fff" stroke-width="2"')}On map</button></div>
     <span class="cat">${svg(c.i)}${esc(c.n)}</span><a class="credit" target="_blank" rel="noopener" hidden>Photo · Wikipedia</a></div>
     <div class="titleblock"><h1>${esc(p.n)}</h1><div class="jpn">${esc(p.ja)}</div>
-    ${addrHtml(p, true)}</div>
+    ${chainHtml()}</div>
     <p class="lede">${esc(p.d)}</p>
     ${p.may?`<div class="maynote"><b>During your trip</b>${esc(p.may)}</div>`:""}
     <div class="info">
@@ -1137,7 +1169,7 @@ function rCity(id, trip){
   return `<div class="hero" style="--c:${trip?css('--accent'):'#3e63dd'}" data-wk="${esc(c.wk)}" data-q="${esc(c.n+' Japan')}"><div class="ic">${svg(ICON.globe)}</div>
     <div class="hb">${stack.length?`<button data-a="back">${svg(ICON.back,'width="15" height="15" fill="none" stroke="#fff" stroke-width="2.4"')}Back</button>`:"<span></span>"}<span></span></div>
     <span class="cat" style="--c:rgba(0,0,0,.45)">${trip?"Day trip from Tokyo":"City"}</span><a class="credit" target="_blank" rel="noopener" hidden>Photo · Wikipedia</a></div>
-    <div class="titleblock"><h1>${esc(c.n)}</h1><div class="jpn">${esc(c.ja)}</div>${addrHtml(c)}</div>
+    <div class="titleblock"><h1>${esc(c.n)}</h1><div class="jpn">${esc(c.ja)}</div>${chainHtml()}</div>
     <p class="lede">${esc(c.d)}</p>
     ${c.pf!=="Tokyo"?`<div class="notTokyo">${svg(ICON.pin)}<span><b>Not in Tokyo.</b> It's in ${esc(c.pf)} prefecture${c.note?". "+esc(c.note):"."}</span></div>`:""}
     <div class="stats"><div class="stat"><b>${fmtMin(c.t)}</b><span>${c.m==="fly"?"flight":c.m==="bus"?"by bus":"by train"} from Tokyo</span></div><div class="stat"><b>${Math.round(km([35.6812,139.7671], c.ll))}</b><span>km from Tokyo</span></div><div class="stat"><b>${compass([35.6812,139.7671], c.ll)}</b><span>direction from Tokyo</span></div></div>
@@ -1168,8 +1200,8 @@ function rFound(){
   const wc = x.ward ? WARD[x.ward] : null;
   return `${backBtn()}<div class="eyebrow">${esc(x.kind)} · from map search</div>
     <h1 style="font-size:32px">${esc(x.n)}</h1>
-    <div class="addr">${x.big?`<span class="addr-b">${esc(x.big)}</span>`:""}${x.small?`<span class="sep">›</span>${wc?`<button data-a="ward:${wc.code}" class="addr-s" style="--c:${wc.color}"><i></i>${esc(x.small)} <span class="jp">${esc(wc.ja)}</span></button>`:`<span class="addr-s"><i></i>${esc(x.small)}</span>`}`:""}</div>
-    ${x.area?`<p class="s" style="margin-top:10px;color:var(--muted)">${esc(x.area)}</p>`:""}
+    ${chainHtml()}
+    ${x.street?`<p class="s" style="margin-top:10px;color:var(--muted)">${esc(x.street)}</p>`:""}
     ${!x.ward && x.big && x.big!=="Tokyo"?`<div class="notTokyo">${svg(ICON.pin)}<span><b>Not in Tokyo.</b> It's in ${esc(x.big)} prefecture.</span></div>`:""}
     <div class="info"><div class="irow">${svg(ICON.route)}<div><div class="timebig"><b>${d < 10 ? d.toFixed(1) : Math.round(d)}</b><span>km from your hotel (straight line)</span></div><small>For real train times and routes, use Directions below.</small></div></div></div>
     <a class="cta" href="${gmDir(x.ll)}" target="_blank" rel="noopener">${svg(ICON.train,'width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"')}Directions from Iriya</a>
@@ -1271,7 +1303,14 @@ function featToFound(f){
   let big = (p.state || "").replace(/ Prefecture$/,""), small = p.city || p.county || p.district || "";
   if (loc.ward){ big = "Tokyo"; small = WARD[loc.ward].en + " ward"; } else if (loc.tama){ big = "Tokyo"; small = `${loc.tama} ${KIND(loc.tamaJa)} (Tama)`; }
   const area = [p.locality, p.district !== small ? p.district : "", p.street ? p.street + (p.housenumber ? " " + p.housenumber : "") : ""].filter(Boolean).join(", ");
-  return {id:`osm-${p.osm_type}${p.osm_id}`, n: p.name || [p.street, p.housenumber].filter(Boolean).join(" ") || small || "Place", ll, kind: OSM_KIND(p.osm_value), big, small, area, ward: loc.ward};
+  const isWard = t => /\bward\b|-ku$| ku$/i.test(t || "");
+  let mu = small, muLvl = loc.ward ? "special ward" : loc.tama ? "city · Tama" : p.city ? "city" : p.county ? "county" : "", muJa = loc.ward ? WARD[loc.ward].ja : loc.tama ? loc.tamaJa : "";
+  if (!loc.ward && !loc.tama && p.city && !/ (city|town|village)$/i.test(mu)) mu = p.city + " city";
+  const ward2 = !loc.ward && isWard(p.district) ? p.district : "";
+  let areaN = p.locality || (!isWard(p.district) && p.district !== p.city ? p.district : "") || "";
+  if (!areaN && loc.ward){ const h = nearestHood(ll, loc.ward); if (h) areaN = h[0]; }
+  return {id:`osm-${p.osm_type}${p.osm_id}`, n: p.name || [p.street, p.housenumber].filter(Boolean).join(" ") || small || "Place", ll, kind: OSM_KIND(p.osm_value), big, small, area, ward: loc.ward,
+    pf: big, mu, muLvl, muJa, ward2, areaN, street: p.street ? p.street + (p.housenumber ? " " + p.housenumber : "") : ""};
 }
 async function runGeo(qs){
   const box = document.getElementById("geoRes"); if (!box) return;
